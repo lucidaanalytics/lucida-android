@@ -77,7 +77,7 @@ Replay needs both `analytics` and `replay` consent.
 - Replay: `ReplayConfig(maskAllText, maskAllTextInputs, maskAllImages, maskSandboxedViews, sampleRate, throttleMs)`, view tag
   `lc-unmask`, and `lucida.replay.start()/stop()/isActive`. Password inputs stay masked under any setting. Sampling is decided per session.
 
-Not built: push registration (needs a scope decision), screenshot-mode replay, network/log capture in replay.
+Not built: push registration (needs a scope decision), network/log capture in replay.
 
 ## Develop
 
@@ -85,7 +85,7 @@ Not built: push registration (needs a scope decision), screenshot-mode replay, n
 `cd sdks/android && ./gradlew :lucida-core:test`. The test run reads the shared vectors via
 `../../../testdata/flags`.
 
-Gaps: scroll offsets and Compose semantics are not captured (View system only); screenshot mode is not built;
+Gaps: scroll offsets and Compose semantics are not captured (View system only); Compose `lucidaMask()`/`lucidaUnmask()` bounds are kept in screen dp and shifted onto the walked decor view, so dialogs and inset windows line up;
 tap coordinates use raw screen px / density against decor-view dp.
 
 ---

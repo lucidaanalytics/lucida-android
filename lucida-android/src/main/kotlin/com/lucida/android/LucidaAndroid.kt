@@ -14,7 +14,6 @@ import com.lucida.core.CoreConfig
 import com.lucida.core.GuidesConfig
 import com.lucida.core.Lucida
 import com.lucida.core.QueueConfig
-import com.lucida.core.MarkerRegistry
 import com.lucida.core.ScreenshotMasks
 import com.lucida.core.ViewKind
 import com.lucida.core.ViewNode
@@ -120,7 +119,7 @@ object LucidaAndroid {
             decor.post {
                 if (!c.replay.shouldCapture(screen)) { c.replay.screen(ViewNode(ViewKind.CONTAINER, 0, 0, 0, 0), screen, 0, 0); return@post }
                 val d = a.resources.displayMetrics.density
-                val regions = MarkerRegistry.snapshot()
+                val regions = WireframeCapture.markerRegions(decor, d)
                 val tree = ViewHierarchy(replay!!, d).capture(decor, regions)
                 val frame = if (replay.mode == ReplayMode.SCREENSHOT) ScreenshotCapture.capture(a, ScreenshotMasks.plan(tree, regions), replay.screenshotQuality) else null
                 if (replay.mode == ReplayMode.SCREENSHOT && frame == null) return@post

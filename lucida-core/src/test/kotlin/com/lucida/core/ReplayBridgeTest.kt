@@ -22,4 +22,12 @@ class ReplayBridgeTest {
         assertFalse(json.contains("Hello Alice"))
         assertFalse(json.contains("secret@pw"))
     }
+
+    @Test fun screenshotCarriesTheMaskedJpegInsideTheSameShape() {
+        val json = ReplayBridge.screenshot(ScreenshotFrame("QUJD", 360, 640), "Checkout", 1000L)
+        assertContains(json, "\"width\":360")
+        assertContains(json, "app://Checkout")
+        assertContains(json, "data:image/jpeg;base64,QUJD")
+        assertContains(json, "lc-screenshot")
+    }
 }

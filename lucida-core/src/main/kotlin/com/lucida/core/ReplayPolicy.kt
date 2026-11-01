@@ -36,7 +36,7 @@ class ScreenshotFrame(val jpegBase64: String, val width: Int, val height: Int)
 
 enum class MarkerRole { MASK, UNMASK }
 
-/** A Compose (or any non-View) region the app marked; bounds in dp relative to the decor view. */
+/** A Compose (or any non-View) region the app marked; the registry holds screen dp, [MarkerRegistry.snapshot] makes them root-relative. */
 data class MarkerRegion(val role: MarkerRole, val rect: MaskRect)
 
 /**
@@ -54,7 +54,12 @@ object MarkerRegistry {
         regions.remove(owner)
     }
 
-    @Synchronized fun snapshot(): List<MarkerRegion> = regions.values.toList()
+    /**
+     * Regions relative to a root whose top-left sits at ([originX], [originY]) dp on screen. Entries are stored in screen
+     * dp so a dialog, a non-full-screen window or system insets do not shift them against the walked decor view.
+     */
+    @Synchronized fun snapshot(originX: Int = 0, originY: Int = 0): List<MarkerRegion> =
+        regions.values.map { it.copy(rect = it.rect.copy(x = it.rect.x - originX, y = it.rect.y - originY)) }
 
     @Synchronized fun clear() = regions.clear()
 }

@@ -182,6 +182,8 @@ class ReplayGatingTest {
         val k = Any()
         MarkerRegistry.set(k, MarkerRegion(MarkerRole.MASK, MaskRect(0, 0, 1, 1)))
         assertEquals(1, MarkerRegistry.snapshot().size)
+        // Stored in screen dp; a root at (10, 24) on screen (a dialog, a window below the status bar) sees it shifted.
+        assertEquals(MaskRect(-10, -24, 1, 1), MarkerRegistry.snapshot(10, 24)[0].rect)
         MarkerRegistry.remove(k)
         assertTrue(MarkerRegistry.snapshot().isEmpty())
     }
