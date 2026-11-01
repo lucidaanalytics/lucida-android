@@ -20,7 +20,7 @@ android {
 dependencies {
     api(project(":lucida-core"))
     // The host app supplies Compose; compileOnly keeps this module from pinning a version (Apache-2.0).
-    compileOnly(platform("androidx.compose:compose-bom:2024.10.01"))
+    compileOnly(platform("androidx.compose:compose-bom:2026.09.00"))
     compileOnly("androidx.compose.ui:ui")
 }
 
