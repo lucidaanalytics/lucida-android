@@ -17,4 +17,4 @@ jobs:
           distribution: temurin
           java-version: "17"
       # ANDROID_HOME is preinstalled on ubuntu-latest, so the Android library modules are included.
-      - run: ./gradlew --no-daemon --console=plain :lucida-core:test :lucida-android:compileDebugKotlin :lucida-compose:compileDebugKotlin
+      - run: ./gradlew --no-daemon --console=plain :lucida-core:test :lucida-openfeature:test :lucida-android:compileDebugKotlin :lucida-compose:compileDebugKotlin

@@ -8,9 +8,16 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+/** $LUCIDA_TESTDATA, else the nearest testdata/ above the working dir (monorepo and mirror layouts both work). */
+private fun testdata(rel: String): File {
+    System.getenv("LUCIDA_TESTDATA")?.takeIf { it.isNotEmpty() }?.let { return File(it, rel) }
+    return generateSequence(File("").absoluteFile) { it.parentFile }.map { File(it, "testdata/$rel") }.firstOrNull { it.exists() }
+        ?: error("testdata/$rel not found")
+}
+
 class LucidaProviderTest {
     @Test fun reasonTableMatchesSharedJson() {
-        val root = Json.decodeObj(File("../../../testdata/openfeature/reasons.json").readText())
+        val root = Json.decodeObj(testdata("openfeature/reasons.json").readText())
 
         @Suppress("UNCHECKED_CAST")
         (root["reasons"] as Map<String, Map<String, String>>).forEach { (raw, v) ->

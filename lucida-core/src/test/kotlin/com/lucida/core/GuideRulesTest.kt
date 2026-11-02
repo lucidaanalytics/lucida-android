@@ -69,7 +69,7 @@ class GuideRulesTest {
         assertEquals(1, events.count { it == "\$guide_holdout" })
         val put = http.calls.last { it.first.contains("/v1/guide-state") }.second!!
         val state = Json.decodeObj(put)["state"] as Map<*, *>
-        assertEquals(mapOf("t" to 1L), (state["lc_guide_progress"] as Map<*, *>).mapValues { (it.value as Number).toLong() })
+        assertEquals<Map<*, *>>(mapOf("t" to 1L), (state["lc_guide_progress"] as Map<*, *>).mapValues { (it.value as Number).toLong() })
         assertTrue((state["lc_guide_views"] as Map<*, *>).containsKey("g-twice"))
     }
 }
