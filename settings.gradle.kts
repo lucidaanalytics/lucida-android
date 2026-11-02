@@ -14,6 +14,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "lucida-android-sdk"
 include(":lucida-core")
+include(":lucida-openfeature")
 
 // The Android library needs an Android SDK; the pure-JVM core builds and tests without one.
 val sdkDir = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")

@@ -36,6 +36,14 @@ Pure-JVM use (tests, other hosts): `Lucida(CoreConfig(apiKey, host, UrlConnectio
   `testdata/flags`; flags needing the server (cohorts) or without definitions use `POST /v1/flags`. The gateway's
   `/v1/flags/definitions` needs a secret key, so mobile apps bootstrap definitions themselves or rely on server eval.
 
+## Install attribution
+
+On first open `$app_installed` carries the Google Play Install Referrer: `$install_store=google_play`,
+`$install_referrer` (raw), `$install_referrer_click_ts`, `$install_begin_ts`, plus parsed `$utm_*` and click ids
+(`$gclid`, `$gbraid`, `$wbraid`, `$fbclid`, `$ttclid`, `$msclkid`). Add `com.android.installreferrer:installreferrer`
+(Apache-2.0) to your app; it is `compileOnly` here, and without it the event carries `$install_store` only. Disable
+with `AndroidOptions(installAttribution = false)`. Opted-out users send nothing.
+
 ## Wireframe replay
 
 `POST /v1/replay?compression=gzip`, body `{api_key, session_id, window_id, seq, events}`, `seq` monotonic per window
@@ -48,6 +56,28 @@ Privacy: all text is starred (whitespace kept, the same rule as lc-replay `stars
 `ReplayConfig(maskAllText = false)`; input values are never serialised under any setting; tag a view
 `lc-block` (empty box, subtree dropped), `lc-ignore` (omitted) or `lc-mask` (mask even when the global switch is off).
 Replay needs both `analytics` and `replay` consent.
+
+### Session replay: privacy additions
+
+Every remote value below arrives in `GET /v1/config` and only ever adds masking to what the app configured.
+
+- **Masked screens** (P-M17): `ReplayConfig(maskScreens = listOf("Checkout*"))` plus the project's `replay_mask_screens`
+  (case-insensitive, `*` = any run of characters, whole screen name = the Activity's simple name). On a matching screen every
+  text, input value and image is masked whatever the global switches or `lc-unmask` tags / Compose unmask markers say;
+  screenshots paint them all over.
+- **Text patterns** (P-M46): `ReplayConfig(maskTextPatterns = listOf("\\d{4,}"))` plus `replay_mask_text_patterns` (regular
+  expressions; one that does not compile is ignored). Matches in any text the wireframe would show become `*` (whitespace
+  kept); in screenshot mode a view whose text matches is painted over.
+- **`$dead_swipe`** (P-M46, `ReplayConfig(captureDeadSwipes = true)` by default, needs `captureTouches`): a swipe of 48 dp or
+  more after which the view tree is unchanged ~700 ms later. Properties: `$screen_name`, `$swipe_direction`
+  (`left|right|up|down`), `$swipe_distance` (dp). Never text or view content; at most one per 2 s.
+- **Controlled exposure** (P-L12): when the project sends `replay_exposure_fields` and `replay_exposure_key`, a listed field's
+  value is RSA-OAEP (SHA-256 + MGF1-SHA-256) encrypted on device and sent as `$sensitive_capture` (`$exposure_field`,
+  `$exposure_kid`, `$exposure_ciphertext`, `$screen_name`, `$exposure_truncated` when cut to 190 bytes). Only an audited
+  reveal on the server can read it. Explicit: `LucidaAndroid.client.captureSensitive("card_number", value)`. Automatic: a
+  non-password `EditText` whose tag string or resource entry name is listed is read during the snapshot walk (it stays masked
+  in the replay and can never be unmasked). Password inputs are never captured; identical values are sent once per session;
+  nothing is persisted.
 
 ## Hooks, person profiles, flags, privacy (options)
 
@@ -78,6 +108,32 @@ Replay needs both `analytics` and `replay` consent.
   `lc-unmask`, and `lucida.replay.start()/stop()/isActive`. Password inputs stay masked under any setting. Sampling is decided per session.
 
 Not built: push registration (needs a scope decision), network/log capture in replay.
+
+## In-app guides
+
+Kinds `modal`, `banner`, `announcement`, `slideout`, `tour`, `carousel` (Back / Next with a slide pager) and, with an
+anchoring presenter, `tooltip` / `hotspot`. A step's `native_id` anchors it to a native view by its String tag or resource entry name (`AlertGuidePresenter` implements `AnchoredGuidePresenter`; classic Views, not Compose test tags): the bubble is drawn next
+to the view and follows it on scroll and relayout; a hotspot is a pulsing dot that opens the step. When the view does not
+appear within `wait_ms` (default 3 s, max 15 s) the SDK sends `$guide_target_missing {step_id, selector}` and shows the step
+unanchored; a view gone for 2 s closes the step. The resolved `appearance` tokens (background, text, accent, radius,
+font) apply, with `appearance.dark.tokens` when `theme_mode` is dark, or auto and the device is dark.
+
+## Fallbacks, flag details, OpenFeature
+
+`FlagOptions(fallbacks = mapOf("new_nav" to false))` serves that value, reason `fallback`, when a flag has no value (missing, failed load,
+cold start); fallback reads emit no `$feature_flag_called`. `lucida.flags.getFeatureFlagDetails("key")` returns `FlagDetails`
+(value, payload, variant, raw `reason`, `conditionIndex`, `requestId`, `evaluatedLocally`), or null for an unknown key without a fallback.
+`lucida.flags.onFlagsStatus { CHANGED | STALE | ERROR }` reports reloads.
+
+Module `lucida-openfeature` (`dev.openfeature:kotlin-sdk:0.6.0`, Apache-2.0), static-context provider:
+
+```kotlin
+OpenFeatureAPI.setProviderAndWait(LucidaProvider(lucida), ImmutableContext(targetingKey = "u1", attributes = mapOf("plan" to Value.String("pro"))))
+val on = OpenFeatureAPI.getClient().getBooleanValue("new_nav", false)
+```
+
+`groups` / `groupProperties` attributes map to Lucida groups; the rest are person properties. Reads carry reason and
+`flagMetadata` (`lucidaReason`, `conditionIndex`, `requestId`, `evaluatedLocally`); `track()` maps to `capture`.
 
 ## Develop
 

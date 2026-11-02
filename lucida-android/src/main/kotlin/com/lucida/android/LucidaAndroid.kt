@@ -8,9 +8,13 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.Window
 import com.lucida.core.ConsentMode
 import com.lucida.core.CoreConfig
+import com.lucida.core.DeadSwipe
+import com.lucida.core.ReplayMasking
+import kotlin.math.hypot
 import com.lucida.core.GuidesConfig
 import com.lucida.core.Lucida
 import com.lucida.core.QueueConfig
@@ -57,8 +61,11 @@ object LucidaAndroid {
             replayOptions = ReplayOptions(
                 replay?.sampleRate ?: 1.0, replay?.throttleMs ?: 0, replay?.minDurationMs ?: 0, replay?.useRemoteConfig ?: true,
                 replay?.linkedFlag, replay?.screenAllowList ?: emptyList(), replay?.screenDenyList ?: emptyList(),
+                maskScreens = replay?.maskScreens ?: emptyList(), maskTextPatterns = replay?.maskTextPatterns ?: emptyList(),
+                captureDeadSwipes = replay?.captureDeadSwipes ?: true,
             ),
             autocaptureConfig = options.autocapture,
+            installSource = if (options.installAttribution) InstallReferrerSource.create(app) else null,
         )
         c.core.register(mapOf("\$os" to "Android", "\$os_version" to android.os.Build.VERSION.RELEASE, "\$device_model" to android.os.Build.MODEL))
         client = c
@@ -120,8 +127,16 @@ object LucidaAndroid {
                 if (!c.replay.shouldCapture(screen)) { c.replay.screen(ViewNode(ViewKind.CONTAINER, 0, 0, 0, 0), screen, 0, 0); return@post }
                 val d = a.resources.displayMetrics.density
                 val regions = WireframeCapture.markerRegions(decor, d)
-                val tree = ViewHierarchy(replay!!, d).capture(decor, regions)
-                val frame = if (replay.mode == ReplayMode.SCREENSHOT) ScreenshotCapture.capture(a, ScreenshotMasks.plan(tree, regions), replay.screenshotQuality) else null
+                val walker = ViewHierarchy(replay!!, d, c.replay.exposureFields())
+                val tree = walker.capture(decor, regions)
+                walker.exposed.forEach { (field, value) -> c.captureSensitive(field, value) }  // P-L12, encrypted off the main thread
+                // The wireframe gets P-M17/P-M46 inside the recorder; the screenshot plan needs them here.
+                val frame = if (replay.mode == ReplayMode.SCREENSHOT) {
+                    val plan = ScreenshotMasks.plan(c.replay.applyPrivacy(tree, screen, true), ReplayMasking.regions(regions, c.replay.screenMasked(screen)))
+                    ScreenshotCapture.capture(a, plan, replay.screenshotQuality)
+                } else {
+                    null
+                }
                 if (replay.mode == ReplayMode.SCREENSHOT && frame == null) return@post
                 c.replay.screen(tree, screen, Math.round(decor.width / d), Math.round(decor.height / d), frame)
             }
@@ -131,7 +146,8 @@ object LucidaAndroid {
         private fun hook(w: Window) {
             val cb = w.callback
             if (cb is TapCallback) return
-            w.callback = TapCallback(cb, c, w, replay?.captureTouches == true)
+            val deadSwipes = replay?.takeIf { it.captureTouches && it.captureDeadSwipes }
+            w.callback = TapCallback(cb, c, w, replay?.captureTouches == true, deadSwipes)
         }
 
         override fun onActivityCreated(a: Activity, s: Bundle?) {
@@ -147,10 +163,23 @@ object LucidaAndroid {
         override fun onActivityDestroyed(a: Activity) = Unit
     }
 
-    private class TapCallback(private val inner: Window.Callback, private val c: Lucida, private val w: Window, private val recordTouches: Boolean) : Window.Callback by inner {
+    private class TapCallback(
+        private val inner: Window.Callback,
+        private val c: Lucida,
+        private val w: Window,
+        private val recordTouches: Boolean,
+        /** Non-null when `$dead_swipe` is on: the walker config for the start / end fingerprints. */
+        private val deadSwipes: ReplayConfig?,
+    ) : Window.Callback by inner {
         private val density = w.context.resources.displayMetrics.density
+        private val slop = ViewConfiguration.get(w.context).scaledTouchSlop
+        private var downX = 0f
+        private var downY = 0f
+        private var swipeStart: ViewNode? = null
+        private var swipeScreen = ""
 
         override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+            if (deadSwipes != null) trackSwipe(e, deadSwipes)
             if (e.actionMasked == MotionEvent.ACTION_UP) {
                 val x = e.rawX / density.toDouble()
                 val y = e.rawY / density.toDouble()
@@ -159,6 +188,36 @@ object LucidaAndroid {
             }
             return inner.dispatchTouchEvent(e)
         }
+
+        /**
+         * P-M46: the tree is walked when the finger passes the touch slop (this callback runs before the views get the event,
+         * so nothing has scrolled yet) and again [DeadSwipe.SETTLE_MS] after a 48 dp swipe ends; the comparison runs on the io thread.
+         */
+        private fun trackSwipe(e: MotionEvent, cfg: ReplayConfig) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX
+                    downY = e.rawY
+                    swipeStart = null
+                }
+                MotionEvent.ACTION_MOVE -> if (swipeStart == null && hypot(e.rawX - downX, e.rawY - downY) > slop && c.replay.touchesRecording) {
+                    swipeScreen = c.replay.currentScreen
+                    swipeStart = walk(cfg)
+                }
+                MotionEvent.ACTION_UP -> {
+                    val start = swipeStart ?: return
+                    swipeStart = null
+                    val dx = (e.rawX - downX) / density.toDouble()
+                    val dy = (e.rawY - downY) / density.toDouble()
+                    if (hypot(dx, dy) < DeadSwipe.MIN_DISTANCE) return
+                    val screen = swipeScreen
+                    w.decorView.postDelayed({ c.deadSwipe(screen, start, walk(cfg), dx, dy) }, DeadSwipe.SETTLE_MS)
+                }
+                MotionEvent.ACTION_CANCEL -> swipeStart = null
+            }
+        }
+
+        private fun walk(cfg: ReplayConfig): ViewNode = ViewHierarchy(cfg, density).capture(w.decorView)
 
         private fun autocapture(e: MotionEvent, x: Double, y: Double) {
             val root = w.decorView

@@ -21,6 +21,8 @@ data class AndroidOptions(
     val autocapture: AutocaptureConfig = AutocaptureConfig(),
     /** Capture `$deep_link_opened` for the launching intent's data URI. */
     val captureDeepLinks: Boolean = true,
+    /** Send Play Install Referrer data (utm/click ids) on the first-open `$app_installed`; needs the installreferrer library in the app. */
+    val installAttribution: Boolean = true,
     val reuseAnonymousId: Boolean = false,
     val anonymousIdProvider: (() -> String)? = null,
     val queueCipher: QueueCipher? = null,

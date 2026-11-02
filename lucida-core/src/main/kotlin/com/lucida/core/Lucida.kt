@@ -16,11 +16,12 @@ class Lucida(
     flagOptions: FlagOptions = FlagOptions(),
     replayOptions: ReplayOptions = ReplayOptions(),
     autocaptureConfig: AutocaptureConfig = AutocaptureConfig(),
+    installSource: InstallSource? = null,
 ) {
     val core = Core(config)
     private val preload = flagOptions.preload
     val flags = Flags(core, flagDefinitions, deviceProperties, appVersion, flagOptions)
-    val lifecycle = Lifecycle(core, appVersion, appBuild)
+    val lifecycle = Lifecycle(core, appVersion, appBuild, installSource)
     val replay = ReplayRecorder(core, replayOptions, flagEnabled = { flags.isEnabled(it) })
     val autocapture = Autocapture(core, autocaptureConfig)
     val guides = GuidesService(core, guidesConfig) { flags.isEnabled(it) }
@@ -93,6 +94,16 @@ class Lucida(
     fun pauseReplay() = replay.pause()
     fun resumeReplay() = replay.resume()
     val isReplayActive get() = replay.isActive
+
+    /**
+     * Controlled exposure (P-L12): sends [value] RSA-encrypted with the project key as `$sensitive_capture`, only when [field]
+     * is listed in the project's exposure fields, the key is present and analytics + replay consent is held. Only an
+     * audited reveal on the server can read it; identical values are sent once per session. Encrypts on the io thread.
+     */
+    fun captureSensitive(field: String, value: String) = io.execute { replay.captureSensitive(field, value) }
+
+    /** `$dead_swipe` check for hosts that walk the view tree (see [ReplayRecorder.deadSwipe]); runs on the io thread. */
+    fun deadSwipe(startScreen: String, start: ViewNode, end: ViewNode, dx: Double, dy: Double) = io.execute { replay.deadSwipe(startScreen, start, end, dx, dy) }
 
     fun foregrounded() = lifecycle.foregrounded()
 

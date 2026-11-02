@@ -43,6 +43,12 @@ data class ReplayConfig(
     /** SCREENSHOT sends masked JPEG frames; masks are painted before encoding, on device. */
     val mode: ReplayMode = ReplayMode.WIREFRAME,
     val screenshotQuality: Int = 40,
+    /** Screen-name patterns (`*` wildcard, case-insensitive, whole name) whose snapshots mask all text, inputs and images, whatever the unmask tags say. Union with the project's list. */
+    val maskScreens: List<String> = emptyList(),
+    /** Regular expressions whose matches are starred in any text replay would show (screenshots paint the view). Union with the project's list. */
+    val maskTextPatterns: List<String> = emptyList(),
+    /** `$dead_swipe` when a swipe of 48 dp or more changed nothing on screen (needs [captureTouches]). */
+    val captureDeadSwipes: Boolean = true,
 )
 
 enum class ReplayMode { WIREFRAME, SCREENSHOT }
@@ -65,8 +71,22 @@ private val PASSWORD_VARIATIONS = setOf(
     InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
 )
 
-class ViewHierarchy(private val cfg: ReplayConfig, private val density: Float) {
+/**
+ * [exposureFields] (P-L12): a non-password EditText whose tag string or resource entry name is listed has its value read
+ * into [exposed] for `$sensitive_capture`; its node stays masked and can never be unmasked.
+ */
+class ViewHierarchy(private val cfg: ReplayConfig, private val density: Float, private val exposureFields: Set<String> = emptySet()) {
     private var budget = cfg.maxNodes
+
+    /** (field id, value) pairs read by the last [capture]. */
+    val exposed = ArrayList<Pair<String, String>>()
+
+    private fun exposureId(v: View): String? {
+        if (exposureFields.isEmpty() || v !is EditText || isPassword(v)) return null
+        (v.tag as? String)?.takeIf { it in exposureFields }?.let { return it }
+        if (v.id == View.NO_ID) return null
+        return runCatching { v.resources.getResourceEntryName(v.id) }.getOrNull()?.takeIf { it in exposureFields }
+    }
 
     private fun isPassword(v: View): Boolean {
         val t = (v as? EditText)?.inputType ?: return false
@@ -96,6 +116,10 @@ class ViewHierarchy(private val cfg: ReplayConfig, private val density: Float) {
         // Markers apply to the whole subtree; mask beats unmask at any level.
         val mask = parentMask || v.tag == LcTag.MASK
         val unmask = !mask && (parentUnmask || v.tag == LcTag.UNMASK)
+        val exposeId = exposureId(v)
+        if (exposeId != null) exposed.add(exposeId to (v as EditText).text.toString())
+        // Relative to the parent's visible area: a scrolled parent (ScrollView, ViewPager) shifts its children.
+        val parent = v.parent as? View
         val children = if (v is ViewGroup && !block && depth < cfg.maxDepth) {
             (0 until v.childCount).mapNotNull { node(v.getChildAt(it), depth + 1, mask, unmask) }
         } else {
@@ -103,18 +127,18 @@ class ViewHierarchy(private val cfg: ReplayConfig, private val density: Float) {
         }
         return ViewNode(
             kind = kind,
-            x = dp(v.left),
-            y = dp(v.top),
+            x = dp(v.left + Math.round(v.translationX) - (parent?.scrollX ?: 0)),
+            y = dp(v.top + Math.round(v.translationY) - (parent?.scrollY ?: 0)),
             width = dp(v.width),
             height = dp(v.height),
             // Hint text and password content never leave the device: only TextView.text is read.
             text = if (block) null else (v as? TextView)?.text?.toString(),
             name = v.javaClass.simpleName.lowercase(),
             maskText = mask || (cfg.maskAllText && !unmask),
-            maskInput = mask || isPassword(v) || (cfg.maskAllTextInputs && !unmask),
+            maskInput = mask || isPassword(v) || exposeId != null || (cfg.maskAllTextInputs && !unmask),
             maskImage = mask || (cfg.maskAllImages && !unmask),
             block = block,
-            neverUnmask = isPassword(v),
+            neverUnmask = isPassword(v) || exposeId != null,
             opaque = v.javaClass.name.contains("ComposeView"),
             children = children,
         )

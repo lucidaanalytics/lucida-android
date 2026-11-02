@@ -5,6 +5,7 @@ import android.view.View
 import com.lucida.core.MarkerRegion
 import com.lucida.core.MarkerRegistry
 import com.lucida.core.ReplayBridge
+import com.lucida.core.ReplayMasking
 import com.lucida.core.ScreenshotMasks
 
 /**
@@ -21,12 +22,16 @@ object WireframeCapture {
         maskAllImages: Boolean = true,
         maskSandboxedViews: Boolean = true,
         screenshotQuality: Int? = null,
+        /** P-M17: mask every text, input and image, whatever the unmask tags say. */
+        maskScreen: Boolean = false,
+        /** P-M46: regular expressions starred in shown text (screenshots paint matching views); invalid ones are ignored. */
+        maskTextPatterns: List<String> = emptyList(),
     ): String {
         val decor = activity.window.decorView
         val d = activity.resources.displayMetrics.density
-        val regions = markerRegions(decor, d)
+        val regions = ReplayMasking.regions(markerRegions(decor, d), maskScreen)
         val config = ReplayConfig(maskAllText = maskText, maskAllTextInputs = maskAllTextInputs, maskAllImages = maskAllImages, maskSandboxedViews = maskSandboxedViews)
-        val tree = ViewHierarchy(config, d).capture(decor, regions)
+        val tree = ReplayMasking.apply(ViewHierarchy(config, d).capture(decor, regions), maskScreen, ReplayMasking.compile(maskTextPatterns), screenshotQuality != null)
         val now = System.currentTimeMillis()
         if (screenshotQuality == null) return ReplayBridge.capture(tree, screen, Math.round(decor.width / d), Math.round(decor.height / d), now)
         val frame = ScreenshotCapture.capture(activity, ScreenshotMasks.plan(tree, regions), screenshotQuality.coerceIn(0, 100)) ?: return ""

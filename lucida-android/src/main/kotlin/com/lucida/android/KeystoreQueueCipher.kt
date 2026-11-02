@@ -15,10 +15,16 @@ import javax.crypto.spec.GCMParameterSpec
  * created on first use. Ciphertext is base64 of iv + ciphertext + tag. A lost or rotated key makes [decrypt] return
  * null, so the persisted queue then starts empty.
  */
-class KeystoreQueueCipher(private val alias: String = "dev.lucida.queue") : QueueCipher {
-    private val key: SecretKey by lazy {
+class KeystoreQueueCipher(
+    private val alias: String = "dev.lucida.queue",
+    // Tests pass a software key: Robolectric has no AndroidKeyStore provider.
+    keyProvider: (() -> SecretKey)? = null,
+) : QueueCipher {
+    private val key: SecretKey by lazy { keyProvider?.invoke() ?: keystoreKey() }
+
+    private fun keystoreKey(): SecretKey {
         val ks = KeyStore.getInstance(PROVIDER).apply { load(null) }
-        (ks.getKey(alias, null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER).run {
+        return (ks.getKey(alias, null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER).run {
             init(
                 KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                     .setBlockModes(KeyProperties.BLOCK_MODE_GCM)

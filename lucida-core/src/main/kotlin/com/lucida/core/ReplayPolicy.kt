@@ -1,14 +1,36 @@
 package com.lucida.core
 
-/** The slice of `GET /v1/config` that governs replay (the document the browser SDK reads). */
-data class RemoteReplayConfig(val sessionRecording: Boolean = true, val sampleRate: Double? = null, val minDurationMs: Long? = null) {
+/**
+ * The slice of `GET /v1/config` that governs replay (the document the browser SDK reads). [maskScreens] (P-M17) and
+ * [maskTextPatterns] (P-M46, at most 20, each <= 200 chars) add masking; [exposureFields] + [exposureKey] turn on
+ * controlled exposure (P-L12) only when both are present.
+ */
+data class RemoteReplayConfig(
+    val sessionRecording: Boolean = true,
+    val sampleRate: Double? = null,
+    val minDurationMs: Long? = null,
+    val maskScreens: List<String> = emptyList(),
+    val maskTextPatterns: List<String> = emptyList(),
+    val exposureFields: List<String> = emptyList(),
+    val exposureKey: ExposureKey? = null,
+) {
     companion object {
         fun parse(json: String): RemoteReplayConfig? {
             val o = runCatching { Json.decodeObj(json) }.getOrNull() ?: return null
+            fun strings(k: String) = (o[k] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+            val k = o["replay_exposure_key"] as? Map<*, *>
+            val kid = k?.get("kid") as? String
+            val n = k?.get("n") as? String
+            val e = k?.get("e") as? String
+            val der = k?.get("pkcs1") as? String
             return RemoteReplayConfig(
                 sessionRecording = o["session_recording"] as? Boolean ?: true,
                 sampleRate = (o["replay_sample_rate"] as? Number)?.toDouble(),
                 minDurationMs = (o["replay_min_duration_ms"] as? Number)?.toLong(),
+                maskScreens = strings("replay_mask_screens"),
+                maskTextPatterns = strings("replay_mask_text_patterns").filter { it.length <= 200 }.take(20),
+                exposureFields = strings("replay_exposure_fields"),
+                exposureKey = if (kid != null && n != null && e != null && der != null) ExposureKey(kid, n, e, der) else null,
             )
         }
     }
@@ -23,6 +45,29 @@ object ReplayPolicy {
         if (remote == null) local else if (remote.sessionRecording) minOf(local, remote.sampleRate ?: 1.0) else 0.0
 
     fun minDurationMs(local: Long, remote: RemoteReplayConfig?): Long = maxOf(local, remote?.minDurationMs ?: 0L)
+
+    /** P-M17: case-insensitive match of the whole screen name; `*` matches any run of characters. Empty list = false. */
+    fun screenMasked(screen: String, patterns: List<String>): Boolean {
+        val s = screen.lowercase()
+        return patterns.any { glob(s, it.lowercase()) }
+    }
+
+    private fun glob(s: String, p: String): Boolean {
+        var si = 0
+        var pi = 0
+        var star = -1
+        var mark = 0
+        while (si < s.length) {
+            when {
+                pi < p.length && p[pi] == '*' -> { star = pi; mark = si; pi++ }
+                pi < p.length && p[pi] == s[si] -> { si++; pi++ }
+                star >= 0 -> { pi = star + 1; mark++; si = mark }
+                else -> return false
+            }
+        }
+        while (pi < p.length && p[pi] == '*') pi++
+        return pi == p.length
+    }
 }
 
 /** Absolute rectangle in dp (decor coordinates). */

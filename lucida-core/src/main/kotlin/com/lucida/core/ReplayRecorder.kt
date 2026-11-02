@@ -13,7 +13,9 @@ package com.lucida.core
 /**
  * Recorder behaviour: [sampleRate] decides per session (stable for the whole session), [throttleMs] spaces screen captures.
  * [minDurationMs] holds chunks back, [useRemoteConfig] fetches `GET /v1/config`, [linkedFlag] starts recording only while that
- * flag is on, [screenAllowList]/[screenDenyList] pick screens (deny wins; empty allow = all).
+ * flag is on, [screenAllowList]/[screenDenyList] pick screens (deny wins; empty allow = all). [maskScreens] (P-M17, `*` wildcard,
+ * case-insensitive) and [maskTextPatterns] (P-M46 regular expressions) add to the project's lists; [captureDeadSwipes] sends
+ * `$dead_swipe` for swipes that changed nothing.
  */
 data class ReplayOptions(
     val sampleRate: Double = 1.0,
@@ -23,6 +25,9 @@ data class ReplayOptions(
     val linkedFlag: String? = null,
     val screenAllowList: List<String> = emptyList(),
     val screenDenyList: List<String> = emptyList(),
+    val maskScreens: List<String> = emptyList(),
+    val maskTextPatterns: List<String> = emptyList(),
+    val captureDeadSwipes: Boolean = true,
 )
 
 class ReplayRecorder(
@@ -52,6 +57,13 @@ class ReplayRecorder(
     @Volatile private var remoteLoaded = false
     @Volatile private var screenAllowed = true
     private var lastScreenAt = Long.MIN_VALUE
+    @Volatile private var patterns: List<Regex> = ReplayMasking.compile(options.maskTextPatterns)
+    private val sensitive = SensitiveCapture()
+    private var lastDeadSwipeAt: Long? = null
+
+    /** The screen the last [screen] call named; `$dead_swipe` and `$sensitive_capture` are attributed to it. */
+    @Volatile var currentScreen = "Unknown"
+        private set
 
     /** Manual control: stop() ends recording until start() and drops chunks still waiting for the minimum duration. */
     fun start() {
@@ -92,7 +104,53 @@ class ReplayRecorder(
         remoteLoaded = true
         val key = java.net.URLEncoder.encode(core.cfg.apiKey, "UTF-8")
         val r = runCatching { core.cfg.http.send("GET", "${core.host}/v1/config?api_key=$key") }.getOrNull() ?: return
-        if (r.status in 200..299) remote = RemoteReplayConfig.parse(r.body)
+        if (r.status !in 200..299) return
+        val rc = RemoteReplayConfig.parse(r.body) ?: return
+        patterns = ReplayMasking.compile(options.maskTextPatterns + rc.maskTextPatterns)
+        remote = rc
+    }
+
+    /** P-M17: the local list plus the project's `replay_mask_screens`. */
+    fun screenMasked(screen: String) = ReplayPolicy.screenMasked(screen, options.maskScreens + (remote?.maskScreens ?: emptyList()))
+
+    /** P-M17 + P-M46 on a walked tree; [screen] applies it to wireframes itself, hosts call it before a screenshot plan. */
+    fun applyPrivacy(root: ViewNode, screen: String, screenshot: Boolean): ViewNode = ReplayMasking.apply(root, screenMasked(screen), patterns, screenshot)
+
+    /** P-L12 field ids for the view walker; empty unless the project sent both the list and its key. */
+    fun exposureFields(): Set<String> = remote?.takeIf { it.exposureKey != null }?.exposureFields?.toSet() ?: emptySet()
+
+    /**
+     * P-L12: encrypts a listed field's value and captures `$sensitive_capture` (analytics + replay consent and the project
+     * key required). Identical values are sent once per session; nothing is sent when encryption fails. Call off the main thread.
+     */
+    fun captureSensitive(field: String, value: String): Boolean {
+        if (value.isEmpty() || !core.consent.has("analytics") || !core.consent.has("replay")) return false
+        val r = remote ?: return false
+        val key = r.exposureKey ?: return false
+        if (field !in r.exposureFields) return false
+        val p = sensitive.properties(field, value, currentScreen, key, core.session.touch()) ?: return false
+        core.capture("\$sensitive_capture", p)
+        return true
+    }
+
+    /** Recording touches right now: the gates hold and a snapshot of an allowed screen was taken. */
+    val touchesRecording: Boolean
+        @Synchronized get() = snapshot != null && enabled && screenAllowed
+
+    /**
+     * P-M46: [start] was walked when the swipe began on [startScreen], [end] ~700 ms after it ended; equal structure on the
+     * same screen and a 48 dp swipe is a `$dead_swipe` (at most one per 2 s). Call off the main thread.
+     */
+    fun deadSwipe(startScreen: String, start: ViewNode, end: ViewNode, dx: Double, dy: Double): Boolean {
+        if (!options.captureDeadSwipes || !touchesRecording) return false
+        val fa = DeadSwipe.fingerprint(start)
+        val fb = DeadSwipe.fingerprint(end)
+        val now = core.clock.nowMs()
+        val props = synchronized(this) {
+            DeadSwipe.decide(currentScreen, startScreen, fa, fb, dx, dy, now, lastDeadSwipeAt)?.also { lastDeadSwipeAt = now }
+        } ?: return false
+        core.capture("\$dead_swipe", props)
+        return true
     }
 
     /** Would [screen] be recorded right now (gates + throttle)? Lets a host skip an expensive screenshot. */
@@ -101,6 +159,7 @@ class ReplayRecorder(
 
     @Synchronized
     fun screen(root: ViewNode, screen: String, width: Int, height: Int, frame: ScreenshotFrame? = null) {
+        currentScreen = screen
         if (!isActive) return
         screenAllowed = ReplayPolicy.screenAllowed(screen, options.screenAllowList, options.screenDenyList)
         if (!screenAllowed) {
@@ -115,7 +174,7 @@ class ReplayRecorder(
         val s = if (frame != null) {
             Wireframe.screenshotSnapshot(frame.jpegBase64, screen, frame.width, frame.height, now)
         } else {
-            Wireframe.snapshot(root, screen, width, height, now)
+            Wireframe.snapshot(applyPrivacy(root, screen, false), screen, width, height, now)
         }
         snapshot = s
         needsSnapshot = false
