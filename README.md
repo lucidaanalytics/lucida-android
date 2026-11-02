@@ -125,7 +125,7 @@ cold start); fallback reads emit no `$feature_flag_called`. `lucida.flags.getFea
 (value, payload, variant, raw `reason`, `conditionIndex`, `requestId`, `evaluatedLocally`), or null for an unknown key without a fallback.
 `lucida.flags.onFlagsStatus { CHANGED | STALE | ERROR }` reports reloads.
 
-Module `lucida-openfeature` (`dev.openfeature:kotlin-sdk:0.6.0`, Apache-2.0), static-context provider:
+Module `lucida-openfeature` (`dev.openfeature:kotlin-sdk:0.6.2`, Apache-2.0), static-context provider:
 
 ```kotlin
 OpenFeatureAPI.setProviderAndWait(LucidaProvider(lucida), ImmutableContext(targetingKey = "u1", attributes = mapOf("plan" to Value.String("pro"))))

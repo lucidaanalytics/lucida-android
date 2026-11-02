@@ -4,15 +4,16 @@ import com.lucida.core.FlagDetails
 import com.lucida.core.FlagsStatus
 import com.lucida.core.Lucida
 import com.lucida.core.Obj
-import dev.openfeature.sdk.EvaluationContext
-import dev.openfeature.sdk.FeatureProvider
-import dev.openfeature.sdk.Hook
-import dev.openfeature.sdk.ProviderEvaluation
-import dev.openfeature.sdk.ProviderMetadata
-import dev.openfeature.sdk.TrackingEventDetails
-import dev.openfeature.sdk.Value
-import dev.openfeature.sdk.events.OpenFeatureProviderEvents
-import dev.openfeature.sdk.exceptions.ErrorCode
+import dev.openfeature.kotlin.sdk.EvaluationContext
+import dev.openfeature.kotlin.sdk.FeatureProvider
+import dev.openfeature.kotlin.sdk.Hook
+import dev.openfeature.kotlin.sdk.ProviderEvaluation
+import dev.openfeature.kotlin.sdk.ProviderMetadata
+import dev.openfeature.kotlin.sdk.TrackingEventDetails
+import dev.openfeature.kotlin.sdk.Value
+import dev.openfeature.kotlin.sdk.events.OpenFeatureProviderEvents
+import dev.openfeature.kotlin.sdk.exceptions.ErrorCode
+import dev.openfeature.kotlin.sdk.exceptions.OpenFeatureError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,7 +22,7 @@ import kotlinx.coroutines.withContext
 /**
  * OpenFeature provider over the Lucida Android SDK (static-context paradigm). `initialize` / `onContextSet`
  * identify the targeting key, apply attributes as person properties and reload flags; reads are synchronous
- * over the loaded flags. Written against dev.openfeature:kotlin-sdk 0.6.0.
+ * over the loaded flags. Written against dev.openfeature:kotlin-sdk 0.6.2.
  */
 class LucidaProvider(private val lucida: Lucida) : FeatureProvider {
     override val hooks: List<Hook<*>> = emptyList()
@@ -32,9 +33,9 @@ class LucidaProvider(private val lucida: Lucida) : FeatureProvider {
         lucida.flags.onFlagsStatus {
             events.tryEmit(
                 when (it) {
-                    FlagsStatus.CHANGED -> OpenFeatureProviderEvents.ProviderConfigurationChanged()
-                    FlagsStatus.STALE -> OpenFeatureProviderEvents.ProviderStale()
-                    FlagsStatus.ERROR -> OpenFeatureProviderEvents.ProviderError()
+                    FlagsStatus.CHANGED -> OpenFeatureProviderEvents.ProviderConfigurationChanged
+                    FlagsStatus.STALE -> OpenFeatureProviderEvents.ProviderStale
+                    FlagsStatus.ERROR -> OpenFeatureProviderEvents.ProviderError(OpenFeatureError.GeneralError("Lucida flag load failed"))
                 },
             )
         }
@@ -44,7 +45,7 @@ class LucidaProvider(private val lucida: Lucida) : FeatureProvider {
 
     override suspend fun initialize(initialContext: EvaluationContext?) {
         apply(initialContext)
-        events.tryEmit(OpenFeatureProviderEvents.ProviderReady())
+        events.tryEmit(OpenFeatureProviderEvents.ProviderReady)
     }
 
     override fun shutdown() {}

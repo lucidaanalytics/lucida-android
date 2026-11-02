@@ -2,8 +2,8 @@ package com.lucida.openfeature
 
 import com.lucida.core.FlagDetails
 import com.lucida.core.Json
-import dev.openfeature.sdk.ImmutableContext
-import dev.openfeature.sdk.Value
+import dev.openfeature.kotlin.sdk.ImmutableContext
+import dev.openfeature.kotlin.sdk.Value
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -6,7 +6,9 @@ plugins {
 dependencies {
     api(project(":lucida-core"))
     // Official OpenFeature Kotlin SDK (Apache-2.0); resolves its JVM/Android variant by module metadata.
-    api("dev.openfeature:kotlin-sdk:0.6.0")
+    api("dev.openfeature:kotlin-sdk:0.6.2") // 0.7+ is built with Kotlin 2.2, newer than this build reads
+    // the SDK publishes coroutines as runtime-only, but observe() exposes a Flow and the provider uses Dispatchers.IO
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     testImplementation(kotlin("test"))
 }
 

@@ -2,9 +2,10 @@ package com.lucida.openfeature
 
 import com.lucida.core.FlagDetails
 import com.lucida.core.Obj
-import dev.openfeature.sdk.EvaluationContext
-import dev.openfeature.sdk.EvaluationMetadata
-import dev.openfeature.sdk.Value
+import dev.openfeature.kotlin.sdk.EvaluationContext
+import dev.openfeature.kotlin.sdk.EvaluationMetadata
+import dev.openfeature.kotlin.sdk.Value
+import kotlin.time.ExperimentalTime
 
 /** Lucida reason -> OpenFeature reason; mirrors testdata/openfeature/reasons.json (the tests read that file). */
 internal object ReasonMap {
@@ -28,13 +29,14 @@ internal object ReasonMap {
     }.build()
 }
 
+@OptIn(ExperimentalTime::class) // Value.Instant wraps kotlin.time.Instant
 internal object ContextMap {
     fun native(v: Value): Any? = when (v) {
         is Value.String -> v.string
         is Value.Boolean -> v.boolean
         is Value.Integer -> v.integer
         is Value.Double -> v.double
-        is Value.Date -> v.date.toString()
+        is Value.Instant -> v.instant.toString()
         is Value.List -> v.list.map(::native)
         is Value.Structure -> v.structure.mapValues { native(it.value) }
         is Value.Null -> null
