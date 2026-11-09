@@ -1,5 +1,21 @@
 # Lucida Android SDK
 
+## Install
+
+From GitHub, [lucidaanalytics/lucida-android](https://github.com/lucidaanalytics/lucida-android), release `v0.1.0`:
+
+```kotlin
+// settings.gradle.kts / build.gradle.kts
+repositories { maven("https://jitpack.io") }
+dependencies {
+    implementation("com.github.lucidaanalytics.lucida-android:lucida-android:v0.1.0")
+    // pure JVM core only: ...:lucida-core:v0.1.0; also ...:lucida-compose:v0.1.0, ...:lucida-openfeature:v0.1.0
+}
+```
+
+JitPack builds the tag on first request. The release also attaches the `.aar` and `.jar` files. Maven Central (`io.github.lucidaanalytics:lucida-android`) is coming.
+
+
 Kotlin. Two Gradle modules:
 
 - `lucida-core`: pure Kotlin/JVM (no Android classes). Capture queue, identity, consent, flags, lifecycle

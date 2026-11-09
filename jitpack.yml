@@ -1,0 +1,5 @@
+# JitPack serves a multi-module repo as com.github.<org>.<repo>:<module>:<tag>; the group is passed so inter-module dependencies in the poms use it.
+jdk:
+  - openjdk17
+install:
+  - ./gradlew --no-daemon --console=plain -PlucidaGroup=com.github.lucidaanalytics.lucida-android publishToMavenLocal -x test

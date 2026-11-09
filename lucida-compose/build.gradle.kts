@@ -25,9 +25,9 @@ dependencies {
 }
 
 mavenPublishing {
-    coordinates("io.github.lucidaanalytics", "lucida-compose", "0.1.0")
+    coordinates((findProperty("lucidaGroup") ?: "io.github.lucidaanalytics").toString(), "lucida-compose", "0.1.0")
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
-    signAllPublications()
+    if (findProperty("signingInMemoryKey") != null || findProperty("signing.keyId") != null) signAllPublications() // JitPack builds unsigned
     pom {
         name.set("lucida-compose")
         description.set("Lucida Android SDK: Jetpack Compose helpers")
